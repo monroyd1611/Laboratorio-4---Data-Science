@@ -1,8 +1,8 @@
 \documentclass[10pt,a4paper]{article}
+\pdfmapfile{+cm.map}
 
 \usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage[spanish,es-nodecimaldot,es-noquoting]{babel}
+\usepackage[provide=*,spanish]{babel}
 \usepackage[margin=2cm,top=2.4cm,bottom=2cm]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -248,42 +248,135 @@ Las causas apuntan a la presión urbana y a la forma misma de cada lago.
   una presión sobre el agua mucho menor que la del corredor urbano que drena hacia Amatitlán.
 \end{itemize}
 
-\section{Limitaciones y confianza en los resultados}
+\section{Modelos de clasificación}
+
+La unidad de modelado es un píxel válido de agua de 10 por 10 metros. La variable respuesta toma el valor 1 cuando
+la clorofila-a estimada es al menos 12 microgramos por litro, entrada al Nivel de Alerta 1, y 0 en caso contrario.
+El conjunto contiene 450,499 observaciones de 21 fechas; la imagen de Atitlán del 18 de enero de 2025 se excluyó
+porque solo conservó 2.98\% de cobertura válida. La clase positiva representa 6.15\%, por lo que la exactitud por sí
+sola no es un criterio suficiente.
+
+Se utilizaron B03, B04, B08, NDVI, NDWI, los cocientes verde/rojo y NIR/verde, brillo, textura local del NDWI y
+distancia a la orilla. Se excluyeron clorofila-a, NDCI y B05: las dos primeras definen directamente la respuesta y
+B05, junto con B04, permite reconstruir NDCI. También se excluyeron lago, fecha, latitud y longitud para evitar que
+los modelos memorizaran la ubicación en vez de aprender la firma espectral.
+
+\subsection{Entrenamiento y comparación justa}
+
+Se hizo una única división estratificada y reproducible: 70\% para entrenamiento y 30\% para prueba, con semilla 42.
+Los tres algoritmos ---Regresión Logística, Random Forest y Gradient Boosting por histogramas--- recibieron
+exactamente los mismos índices de prueba. Primero se entrenaron con su configuración inicial y umbral 0.5. Después,
+el ajuste de hiperparámetros se realizó exclusivamente dentro del 70\% de entrenamiento mediante validación
+estratificada de tres particiones. El conjunto de prueba no intervino ni en la selección de parámetros ni en la
+elección del umbral.
+
+Debido al tamaño del conjunto, la búsqueda se realizó sobre una submuestra estratificada de 120,000 observaciones
+del entrenamiento y la configuración elegida se volvió a ajustar con todo el 70\%. Los valores evaluados fueron:
 
 \begin{itemize}
-  \item El índice mide clorofila-a, que es un buen indicador de la biomasa de cianobacterias, pero no distingue la
-  especie ni mide toxinas. Para decisiones de salud pública sigue siendo necesario el muestreo en campo, aunque
-  ahora se sabe dónde y cuándo tomarlo.
-  \item La imagen de Atitlán del 18 de enero de 2025 quedó con apenas 17 por ciento de agua útil por las sombras de
-  las paredes del cráter con el sol bajo de esa época, y su valor negativo no es comparable con el resto.
-  \item Las mediciones de la orilla son menos confiables porque cada cuadro de 10 metros puede mezclar agua con
-  vegetación. Esto explica los pocos valores altos que aparecen en Atitlán.
-  \item La banda del borde rojo que alimenta el índice de cianobacteria es de 20 metros en origen y se remuestrea a
-  10 metros, de modo que el mapa se ve más fino de lo que realmente resuelve esa banda.
-  \item Con 11 fechas por lago, y con una sola de ellas en época lluviosa en el caso de Amatitlán, no es posible
-  cerrar el análisis estacional. Lo que sí queda demostrado es que en Amatitlán hay floración en todas las fechas,
-  incluidas las de época seca.
+  \item \textbf{Regresión Logística:} $C\in\{0.01,0.1,1,10\}$ y pesos de clase nulos o balanceados. Las variables
+  se estandarizaron dentro de un \textit{pipeline} para que la escala se aprendiera sin observar la prueba.
+  \item \textbf{Random Forest:} 250 árboles; profundidad máxima de 12, 24 o sin límite; mínimo de 1, 5 o 20
+  observaciones por hoja; número de variables por división igual a la raíz del total o 70\%; y pesos nulos o
+  balanceados por submuestra. Se evaluaron diez combinaciones aleatorias con semilla fija.
+  \item \textbf{Gradient Boosting:} tasa de aprendizaje de 0.03, 0.07 o 0.12; 100 o 200 iteraciones; 15, 31 o 63
+  hojas; mínimo de 20 o 100 observaciones por hoja; regularización L2 de 0 o 1; y pesos de clase nulos o balanceados.
+  Se evaluaron diez combinaciones aleatorias con semilla fija.
 \end{itemize}
 
-\section{Conclusiones y recomendaciones}
+El criterio de selección fue F2, que da al \textit{recall} el doble de importancia que a la precisión. Luego se
+reservó 15\% del entrenamiento como validación interna para elegir, entre 0.05 y 0.95, el umbral que maximizó F2;
+por último cada modelo se reentrenó con todo el entrenamiento antes de evaluarlo una sola vez en la prueba.
 
-Amatitlán presenta una floración crónica de cianobacterias durante todo el periodo analizado, con una clorofila-a
-promedio de 12.5 microgramos por litro, un máximo de 54.2 en junio de 2026 y más de la mitad del lago afectado en
-promedio. La floración se concentra siempre en la cuenca norte, del lado del río Villalobos, y el promedio de 2026
-es mayor que el de 2025. Atitlán, en cambio, se mantiene estable y limpio en las once fechas, sin ningún evento
-detectable.
+\subsection{Criterio ambiental de evaluación}
 
-Con base en estos resultados se recomienda:
+Un falso positivo marca como alta presencia una zona que no la tiene. Esto puede producir una alerta innecesaria,
+muestreos adicionales, gasto operativo y pérdida de confianza si se repite. Un falso negativo omite una zona que sí
+tiene alta presencia, lo cual puede retrasar el muestreo confirmatorio y mantener la exposición recreativa o el uso
+del agua ante una floración potencialmente tóxica. Para un sistema de alerta temprana se considera más importante
+reducir falsos negativos. Por ello la comparación principal usa F2 y \textit{recall}; ROC-AUC se reporta como medida
+general de discriminación, pero no representa por sí sola el costo desigual de los dos errores.
 
-\begin{itemize}
-  \item Concentrar el monitoreo en campo y las alertas en la cuenca norte de Amatitlán, que es la zona de
-  acumulación persistente, y tomar el inicio de la época lluviosa como periodo de vigilancia reforzada.
-  \item Sostener el seguimiento satelital como sistema de alerta temprana, ya que cuesta poco, cubre el lago
-  completo y permite decidir dónde tomar las muestras en lugar de repartirlas al azar.
-  \item Priorizar la reducción de la carga de nutrientes que entra por el río Villalobos, porque los resultados
-  espaciales muestran que la floración se origina y se sostiene en ese punto de entrada.
-  \item Mantener a Atitlán bajo observación aunque hoy esté limpio, dado que su condición actual depende de un
-  volumen de dilución que no lo protege de forma indefinida frente a un aumento de la carga de nutrientes.
-\end{itemize}
+\subsection{Resultados iniciales}
+
+Con umbral 0.5 y antes del ajuste, Random Forest presentó el mayor F2 y F1. La exactitud de los tres modelos fue
+alta, pero debe interpretarse junto con el \textit{recall}: por el desbalance, un modelo puede acertar la mayoría de
+los negativos y aun así omitir muchas zonas afectadas.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Modelo & Accuracy & Precision & Recall & F1 & F2 & ROC-AUC \\
+    \midrule
+    Regresión Logística & 0.954 & 0.741 & 0.396 & 0.516 & 0.436 & 0.884 \\
+    Random Forest       & 0.971 & 0.843 & 0.657 & 0.738 & 0.687 & 0.979 \\
+    Gradient Boosting   & 0.970 & 0.843 & 0.632 & 0.722 & 0.665 & 0.981 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Desempeño inicial sobre las mismas 135,150 observaciones de prueba, usando umbral 0.5.}
+\end{table}
+
+\subsection{Configuraciones seleccionadas}
+
+La búsqueda eligió $C=10$ y pesos balanceados para Regresión Logística. Para Random Forest seleccionó profundidad
+24, mínimo de 20 observaciones por hoja, 70\% de variables por división y pesos balanceados por submuestra. Para
+Gradient Boosting eligió tasa 0.03, 200 iteraciones, 63 hojas, mínimo de 20 observaciones por hoja, regularización
+L2 igual a 0 y pesos balanceados. Los F2 medios de validación cruzada fueron 0.582, 0.773 y 0.764,
+respectivamente. Los umbrales seleccionados en la validación interna fueron 0.600, 0.595 y 0.725.
+
+\subsection{Resultados finales}
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Modelo & Accuracy & Precision & Recall & F1 & F2 & ROC-AUC \\
+    \midrule
+    Regresión Logística & 0.912 & 0.381 & 0.701 & 0.493 & 0.600 & 0.913 \\
+    Random Forest       & 0.954 & 0.588 & 0.870 & 0.702 & 0.794 & 0.982 \\
+    Gradient Boosting   & 0.950 & 0.558 & 0.880 & 0.683 & 0.789 & 0.982 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Desempeño final sobre el conjunto común de prueba después del ajuste.}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figuras/comparacion_modelos.png}
+  \caption{Comparación de las métricas finales. Random Forest y Gradient Boosting superan claramente a la
+  Regresión Logística en \textit{recall}, F1, F2 y ROC-AUC.}
+\end{figure}
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Modelo & Umbral & TN & FP & FN & TP \\
+    \midrule
+    Regresión Logística & 0.600 & 117,368 & 9,467 & 2,490 & 5,825 \\
+    Random Forest       & 0.595 & 121,763 & 5,072 & 1,079 & 7,236 \\
+    Gradient Boosting   & 0.725 & 121,046 & 5,789 &   994 & 7,321 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Matrices de confusión finales expresadas como conteos: verdaderos negativos (TN), falsos positivos
+  (FP), falsos negativos (FN) y verdaderos positivos (TP).}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figuras/matrices_confusion_modelos.png}
+  \caption{Matrices de confusión de los modelos ajustados sobre las mismas 135,150 observaciones de prueba.}
+\end{figure}
+
+Random Forest es el modelo final recomendado: alcanza el mayor F2 (0.794), el mayor ROC-AUC (0.9824) y mantiene
+un \textit{recall} de 0.870 con menos falsos positivos que Gradient Boosting. Gradient Boosting detecta 85 positivos
+adicionales y reduce los falsos negativos de 1,079 a 994, pero genera 717 falsos positivos más; su F2 queda
+ligeramente por debajo, en 0.789. Si la política operativa exigiera minimizar los falsos negativos casi sin importar
+el costo de inspección, Gradient Boosting sería defendible por su \textit{recall} de 0.880. Bajo el balance ambiental
+adoptado mediante F2, Random Forest ofrece la mejor relación entre detección y falsas alarmas.
 
 \end{document}
