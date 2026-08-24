@@ -10,6 +10,7 @@
 \usepackage{enumitem}
 \usepackage{fancyhdr}
 \usepackage{caption}
+\usepackage{multirow}
 
 \captionsetup{font=small,labelfont=bf}
 \setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=3pt,parsep=0pt}
@@ -378,5 +379,183 @@ adicionales y reduce los falsos negativos de 1,079 a 994, pero genera 717 falsos
 ligeramente por debajo, en 0.789. Si la política operativa exigiera minimizar los falsos negativos casi sin importar
 el costo de inspección, Gradient Boosting sería defendible por su \textit{recall} de 0.880. Bajo el balance ambiental
 adoptado mediante F2, Random Forest ofrece la mejor relación entre detección y falsas alarmas.
+
+\section{Validación espacial y temporal}
+
+La validación aleatoria del inciso anterior asume que las observaciones de prueba son independientes de las de
+entrenamiento, algo que no se cumple en un campo espacial continuo: un píxel de 10 metros comparte casi toda su
+información con sus vecinos inmediatos. Para medir el efecto de esa autocorrelación se reproyectaron las
+coordenadas a WGS 84 / UTM zona 15N (EPSG:32615), sistema métrico que corresponde a la longitud de ambos lagos, y
+se construyó una cuadrícula de bloques sobre la cual aplicar una validación cruzada agrupada.
+
+\subsection{Tamaño de bloque}
+
+Se probaron cuadrículas de 500, 1000, 1500 y 2000 metros (tabla \ref{tab:tamano-bloque}). Con 500 m el 5.6\% de los
+bloques de Amatitlán queda con menos de 5 observaciones; con 2000 m un solo bloque llega a concentrar hasta 16,028
+observaciones mientras otros tienen menos de 10, lo que produce folds muy desiguales. El tamaño de 1000 metros da el
+mejor balance: 39 bloques en Amatitlán y 164 en Atitlán, suficientes para una validación cruzada agrupada de 5
+particiones con varios bloques por fold en los dos lagos, y solo 2.6\% y 0.6\% de bloques casi vacíos.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{rlrrrr}
+    \toprule
+    Tamaño (m) & Lago & Bloques & Obs. mediana & Obs. máx. & Bloques con \\
+     & & & & & $<$5 obs. (\%) \\
+    \midrule
+    500  & Amatitlán & 107 & 524   & 1,155  & 5.6 \\
+    500  & Atitlán   & 571 & 938   & 1,081  & 1.1 \\
+    1000 & Amatitlán & 39  & 1,085 & 4,438  & 2.6 \\
+    1000 & Atitlán   & 164 & 3,280 & 4,077  & 0.6 \\
+    1500 & Amatitlán & 23  & 2,374 & 7,953  & 4.3 \\
+    1500 & Atitlán   & 83  & 5,393 & 9,037  & 0.0 \\
+    2000 & Amatitlán & 19  & 1,129 & 14,154 & 0.0 \\
+    2000 & Atitlán   & 51  & 4,973 & 16,028 & 2.0 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Bloques y observaciones por bloque según el tamaño de cuadrícula probado.}
+  \label{tab:tamano-bloque}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figuras/bloques_espaciales.png}
+  \caption{Bloques de 1000 m usados para la validación cruzada agrupada, un color distinto por bloque.}
+\end{figure}
+
+\subsection{Esquemas de validación comparados}
+
+Se compararon tres esquemas sobre los mismos tres modelos ajustados en el inciso anterior, reutilizando sus
+hiperparámetros y umbrales: la partición aleatoria 70/30 ya usada, una validación cruzada agrupada de 5 particiones
+por bloque espacial (\texttt{GroupKFold} sobre el identificador de bloque, con las métricas promediadas entre las 5
+particiones) y una partición temporal, entrenando con todas las fechas salvo la más reciente de cada lago y
+evaluando sobre esa fecha más reciente (2026-06-19 en Amatitlán, 2026-07-22 en Atitlán).
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Aleatoria} & \multicolumn{2}{c}{Espacial (media 5 folds)} & \multicolumn{2}{c}{Temporal} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+    Modelo & F2 & ROC-AUC & F2 & ROC-AUC & F2 & ROC-AUC \\
+    \midrule
+    Regresión Logística & 0.600 & 0.913 & 0.597 & 0.909 & 0.871 & 0.980 \\
+    Random Forest       & 0.793 & 0.982 & 0.743 & 0.973 & 0.588 & 0.949 \\
+    Gradient Boosting   & 0.790 & 0.982 & 0.753 & 0.974 & 0.586 & 0.957 \\
+    \bottomrule
+  \end{tabular}
+  \caption{F2 y ROC-AUC bajo los tres esquemas de validación. La versión espacial es el promedio de 5 particiones;
+  la desviación estándar entre ellas va de 0.030 a 0.057 en F2 según el modelo.}
+\end{table}
+
+Bajo validación espacial, el desempeño de los dos modelos de árboles baja y el de la Regresión Logística casi no se
+mueve: Random Forest pasa de F2 0.793 a 0.743 (caída de 0.050) y Gradient Boosting de 0.790 a 0.753 (caída de
+0.037), mientras la Regresión Logística pasa de 0.600 a 0.597. La causa es la autocorrelación espacial: bajo
+partición aleatoria, un píxel de prueba casi siempre tiene vecinos de 10 metros en el entrenamiento con
+reflectancia casi idéntica, y los modelos de árboles, más flexibles, aprovechan esa fuga para ajustarse a
+combinaciones locales de las variables. La Regresión Logística, al ajustar una sola frontera lineal global, tiene
+mucho menos margen para memorizar el vecindario, así que su estimación aleatoria ya era realista.
+
+Bajo validación temporal el patrón se invierte: la Regresión Logística mejora mucho, hasta F2 0.871 con
+\textit{recall} de 0.955, mientras Random Forest y Gradient Boosting caen a 0.588 y 0.586. La fecha de prueba de
+Amatitlán, 2026-06-19, es el pico de floración de todo el periodo analizado en la Parte I (NDCI de 0.397 contra un
+promedio del lago de 0.217), con reflectancias que superan todo lo visto en entrenamiento. Los modelos de árboles
+particionan el espacio de variables con umbrales fijos aprendidos del rango de entrenamiento y no pueden extrapolar
+más allá de ese rango, así que su \textit{recall} se desploma; la Regresión Logística, al ser lineal, sigue
+extrapolando en la misma dirección más allá de lo observado, lo que en este caso coincide con la realidad de un
+evento aún más extremo. Al depender de una sola fecha por lago, este resultado pesa más como prueba de estrés ante
+un evento fuera de rango que como estimación estable del desempeño típico.
+
+De los tres esquemas, la validación espacial da la estimación más realista de la capacidad del modelo para predecir
+zonas nuevas dentro del periodo ya observado: aísla específicamente la fuga por autocorrelación espacial y promedia
+5 particiones independientes, sin mezclar ese efecto con el problema distinto de la extrapolación a un régimen no
+visto que sí afecta a la partición temporal.
+
+\section{Generalización entre lagos}
+
+Los dos lagos tienen prevalencias de la clase positiva y composiciones espectrales muy distintas. Esta sección mide
+si un modelo entrenado únicamente con un lago clasifica correctamente al otro, reutilizando los mismos
+hiperparámetros y umbrales ya elegidos, y lo compara contra el caso en que entrenamiento y prueba provienen del
+mismo lago.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    Experimento & Modelo & Accuracy & Precision & Recall & F1 & F2 & ROC-AUC \\
+    \midrule
+    \multirow{3}{*}{Atitlán $\to$ Atitlán}
+      & Regresión Logística & 0.943 & 0.154 & 0.933 & 0.264 & 0.463 & 0.982 \\
+      & Random Forest       & 0.975 & 0.275 & 0.780 & 0.406 & 0.570 & 0.983 \\
+      & Gradient Boosting   & 0.963 & 0.212 & 0.864 & 0.340 & 0.535 & 0.983 \\
+    \multirow{3}{*}{Amatitlán $\to$ Amatitlán}
+      & Regresión Logística & 0.838 & 0.825 & 0.756 & 0.789 & 0.769 & 0.920 \\
+      & Random Forest       & 0.885 & 0.874 & 0.832 & 0.852 & 0.840 & 0.959 \\
+      & Gradient Boosting   & 0.877 & 0.935 & 0.744 & 0.828 & 0.775 & 0.960 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Referencia: entrenamiento y prueba dentro del mismo lago (70\%/30\% estratificado).}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    Experimento & Modelo & Accuracy & Precision & Recall & F1 & F2 & ROC-AUC \\
+    \midrule
+    \multirow{3}{*}{Atitlán $\to$ Amatitlán (A)}
+      & Regresión Logística & 0.610 & 0.597 & 0.074 & 0.132 & 0.090 & 0.695 \\
+      & Random Forest       & 0.609 & 0.606 & 0.062 & 0.113 & 0.076 & 0.612 \\
+      & Gradient Boosting   & 0.605 & 0.545 & 0.063 & 0.113 & 0.077 & 0.598 \\
+    \multirow{3}{*}{Amatitlán $\to$ Atitlán (B)}
+      & Regresión Logística & 0.358 & 0.016 & 0.920 & 0.031 & 0.073 & 0.802 \\
+      & Random Forest       & 0.664 & 0.010 & 0.295 & 0.019 & 0.043 & 0.529 \\
+      & Gradient Boosting   & 0.722 & 0.009 & 0.234 & 0.018 & 0.041 & 0.558 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Generalización cruzada: entrenamiento en un lago, prueba en el otro.}
+\end{table}
+
+Ningún modelo generaliza de un lago al otro. El F2 cae entre 8 y 13 veces frente al desempeño dentro del mismo
+lago: de hasta 0.570 (Atitlán) y 0.840 (Amatitlán) dentro del mismo lago, a un máximo de 0.090 en el experimento A y
+0.073 en el experimento B, ambos con la Regresión Logística. El tipo de error cambia según la dirección: en el
+experimento A el problema es de \textit{recall} (0.06 a 0.07, contra 0.75-0.83 dentro del mismo lago), porque un
+modelo entrenado donde solo 1.10\% de los píxeles son positivos casi no detecta la floración de Amatitlán; en el
+experimento B el problema es de precisión (0.009 a 0.016, contra 0.15-0.27 dentro del mismo lago), porque un modelo
+entrenado donde 39.94\% de los píxeles son positivos marca como floración una fracción enorme de los píxeles de
+Atitlán que no lo son.
+
+\subsection{Qué explica la diferencia}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figuras/comparacion_predictores_lagos.png}
+  \caption{Distribución de cada predictora por lago, sin valores atípicos.}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{Prevalencia:} 39.94\% de los píxeles de Amatitlán son de alta presencia contra 1.10\% en Atitlán,
+  casi 36 veces más. Un modelo entrenado en un lago aprende un umbral de decisión calibrado para esa proporción, que
+  queda mal calibrado en el otro.
+  \item \textbf{Nivel de reflectancia:} B03, B04, B08 y brillo son entre 2.3 y 2.7 veces más altos en promedio en
+  Amatitlán que en Atitlán (B03 pasa de 0.0205 a 0.0477); un valor moderado en un lago puede ser extremo en la
+  escala del otro.
+  \item \textbf{Distancia a la orilla:} promedia 1058 m en Atitlán contra 240 m en Amatitlán, casi 4.4 veces más,
+  simple reflejo de que Atitlán es un lago mucho más extenso; el umbral de "cerca de la orilla" aprendido en un lago
+  no es transferible al otro.
+  \item \textbf{Tamaño, profundidad y eutrofización:} como se estableció en la Parte I, Amatitlán es pequeño y
+  somero (unos 15 km²), recibe la descarga sin tratar del río Villalobos y se mantiene hipereutrófico (clorofila-a
+  promedio de 12.5 ug/L); Atitlán es profundo, de origen volcánico, supera los cien kilómetros cuadrados y diluye
+  cualquier aporte de nutrientes en un volumen mucho mayor, por lo que se mantiene oligotrófico (clorofila-a
+  promedio de 3.5 ug/L).
+\end{itemize}
+
+En conjunto, la floración de cianobacterias en estos dos lagos no comparte una firma espectral única y portable:
+depende del régimen de nutrientes propio de cada cuerpo de agua. Un sistema operativo de alerta temprana necesitaría
+un modelo o al menos un umbral calibrado por lago, no un modelo entrenado en uno y aplicado directamente al otro.
 
 \end{document}
