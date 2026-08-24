@@ -1,0 +1,5 @@
+,media,media,media,media,media,media,media,media,media,media,desv_std,desv_std,desv_std,desv_std,desv_std,desv_std,desv_std,desv_std,desv_std,desv_std
+,B03,B04,B08,NDVI,NDWI,verde_rojo,nir_verde,brillo,textura_ndwi,dist_orilla,B03,B04,B08,NDVI,NDWI,verde_rojo,nir_verde,brillo,textura_ndwi,dist_orilla
+lago,,,,,,,,,,,,,,,,,,,,
+Amatitlan,0.0477,0.0279,0.0244,-0.1469,0.3773,1.739,0.4804,0.0333,0.0377,240.3615,0.0276,0.0164,0.0183,0.2128,0.195,0.391,0.203,0.02,0.0529,202.502
+Atitlan,0.0205,0.0104,0.0098,-0.0294,0.4214,2.7041,0.4262,0.0136,0.0369,1058.0927,0.0083,0.0075,0.0073,0.1238,0.1663,1.4508,0.165,0.0076,0.0352,858.8848
