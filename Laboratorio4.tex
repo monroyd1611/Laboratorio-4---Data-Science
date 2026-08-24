@@ -11,6 +11,8 @@
 \usepackage{fancyhdr}
 \usepackage{caption}
 \usepackage{multirow}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
 
 \captionsetup{font=small,labelfont=bf}
 \setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=3pt,parsep=0pt}
@@ -30,7 +32,8 @@
 {\LARGE\bfseries Monitoreo satelital de cianobacterias en los lagos\\[2pt]
 de Atitlán y Amatitlán}\\[6pt]
 {\normalsize Laboratorio 4 -- CC3084 Data Science -- Sección 20 -- Grupo \#7}\\[4pt]
-{\small Marco Carbajal (23025) \quad Carlos Angel (23010) \quad Diego Monroy (23318)}
+{\small Marco Carbajal (23025) \quad Carlos Angel (23010) \quad Diego Monroy (23318)}\\[4pt]
+{\small Código y datos: \url{https://github.com/monroyd1611/Laboratorio-4---Data-Science}}
 \end{center}
 
 \vspace{2pt}
@@ -557,5 +560,222 @@ Atitlán que no lo son.
 En conjunto, la floración de cianobacterias en estos dos lagos no comparte una firma espectral única y portable:
 depende del régimen de nutrientes propio de cada cuerpo de agua. Un sistema operativo de alerta temprana necesitaría
 un modelo o al menos un umbral calibrado por lago, no un modelo entrenado en uno y aplicado directamente al otro.
+
+\section{Interpretación y explicabilidad del modelo}
+
+Se interpreta el Random Forest, que es el modelo con mejor F2. La importancia se mide por permutación sobre el
+conjunto de prueba, barajando una variable a la vez y midiendo cuánto se degrada el F2, y se contrasta con los
+valores SHAP, que reparten cada predicción individual entre las variables que la empujaron hacia arriba o hacia
+abajo.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    Variable & Caída de F2 & SHAP medio absoluto & Correlación valor-SHAP \\
+    \midrule
+    B03          & 0.270 & 0.146 & $+0.82$ \\
+    dist\_orilla  & 0.254 & 0.126 & $-0.83$ \\
+    verde\_rojo   & 0.183 & 0.074 & $+0.33$ \\
+    NDVI         & 0.172 & 0.069 & $+0.09$ \\
+    textura\_ndwi & 0.081 & 0.061 & $+0.85$ \\
+    B04          & 0.063 & 0.037 & $+0.19$ \\
+    brillo       & 0.005 & 0.029 & $+0.79$ \\
+    B08          & 0.002 & 0.005 & $+0.50$ \\
+    nir\_verde    & 0.002 & 0.005 & $-0.36$ \\
+    NDWI         & 0.001 & 0.005 & $+0.36$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Importancia de las variables por permutación y por SHAP. La correlación positiva indica que valores
+  altos de la variable empujan la predicción hacia alta presencia de cianobacteria.}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\linewidth]{figuras/importancia_global.png}
+  \caption{Importancia global por permutación sobre el conjunto de prueba.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figuras/shap_summary.png}
+  \caption{SHAP summary plot. Cada punto es un píxel; el color indica si el valor de la variable es alto o bajo y
+  la posición horizontal cuánto empujó esa variable la predicción.}
+\end{figure}
+
+Los dos métodos coinciden en el orden. Mandan la reflectancia en el verde y la distancia a la orilla, seguidas del
+cociente verde-rojo, el NDVI y la textura del NDWI. En el extremo opuesto, el NDWI, el cociente infrarrojo-verde y
+B08 no aportan prácticamente nada, con caídas de F2 por debajo de 0.002. Que el NDWI resulte inútil tiene sentido:
+todas las observaciones ya son agua, así que dentro del lago esa variable casi no varía.
+
+\begin{itemize}
+  \item \textbf{B03 alto empuja hacia alta presencia} (correlación 0.82). Es el resultado más físico de todos: la
+  cianobacteria dispersa luz en el verde, así que el agua florecida se ve más verde y más brillante. El brillo
+  general apunta en el mismo sentido, con 0.79.
+  \item \textbf{La textura del NDWI alta también empuja hacia arriba} (0.85), lo que confirma la intuición con que
+  se construyó esa variable: la floración es manchada y deja vecindarios heterogéneos, mientras que el agua limpia
+  es uniforme.
+  \item \textbf{La distancia a la orilla funciona al revés} (correlación $-0.83$): mientras más cerca de la ribera
+  está el píxel, más sube la predicción. Coincide con lo encontrado en la Parte I, donde la floración se acumula en
+  la ribera norte de Amatitlán y en la desembocadura del río Villalobos.
+  \item \textbf{El cociente verde-rojo y el NDVI empujan hacia arriba de forma más débil} (0.33 y 0.09) y su efecto
+  no es monótono: contribuyen en combinación con las demás variables, no por sí solas.
+\end{itemize}
+
+Ambientalmente, el modelo reconoce una floración como agua más verde, más brillante, de textura irregular y cercana
+a la orilla, que es una descripción razonable de una mancha de cianobacteria vista desde arriba. Hay, sin embargo,
+una advertencia en ese resultado: que la distancia a la orilla sea la segunda variable más influyente significa que
+buena parte de la decisión no es espectral sino geográfica. El modelo aprendió dónde suele haber floración, no solo
+cómo se ve, y eso explica por qué no logra transferirse al otro lago, donde la geometría de la ribera y la
+ubicación de las zonas afectadas son distintas.
+
+\section{Mapas predictivos}
+
+Para llevar las predicciones al mapa se recalculan las predictoras de todos los píxeles válidos de una imagen, no
+solo de la muestra utilizada para modelar, y se coloca la probabilidad estimada de vuelta en la malla del raster.
+Como el modelo se entrenó con el 70\% de una muestra del 4\%, apenas un 2.8\% de los píxeles mostrados participó
+en el entrenamiento, de modo que el mapa es prácticamente fuera de muestra. La escala distingue cuatro niveles:
+probabilidad muy baja por debajo de 0.25, baja entre 0.25 y 0.5, alta entre 0.5 y 0.75 y muy alta por encima
+de 0.75.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figuras/comparacion_ndci_prediccion.png}
+  \caption{Índice de cianobacteria observado en la Parte I frente a la probabilidad predicha por el modelo, para
+  la misma fecha en cada lago.}
+\end{figure}
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{llrrrrrr}
+    \toprule
+    Lago & Fecha & Aciertos $-$ & Aciertos $+$ & Falsos $+$ & Falsos $-$ & Recall & Precisión \\
+    \midrule
+    Amatitlán & 2026-06-19 & 3,629   & 126,115 & 2,909  & 2,104 & 0.984 & 0.977 \\
+    Atitlán   & 2026-02-12 & 853,795 & 11,242  & 14,953 & 9,654 & 0.538 & 0.429 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Aciertos y errores sobre la imagen completa de cada lago.}
+\end{table}
+
+En Amatitlán, el 19 de junio de 2026, el modelo reproduce casi exactamente la floración observada: sobre 134,757
+píxeles detecta el 98.4\% de los positivos reales con una precisión del 97.7\%, y el mapa de errores muestra el
+lago verde de lado a lado. Frente al mapa de NDCI de la Parte I la coincidencia es directa, lo que confirma que la
+reconstrucción espacial es correcta.
+
+En Atitlán, el 12 de febrero de 2026, el panorama cambia. Con solo 2.3\% de positivos reales, el modelo recupera el
+53.8\% de ellos y acierta en el 42.9\% de sus alarmas. Es el escenario realista: cuando la clase positiva es rara y
+espectralmente marginal, el mismo modelo que funciona en un lago florecido se vuelve poco confiable.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.49\linewidth]{figuras/mapa_errores_Amatitlan.png}
+  \hfill
+  \includegraphics[width=0.49\linewidth]{figuras/mapa_errores_Atitlan.png}
+  \caption{Distribución espacial de aciertos y errores en ambos lagos.}
+\end{figure}
+
+\subsection{Patrones espaciales del error}
+
+El error no se reparte al azar dentro del lago: se concentra en la orilla.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Amatitlán} & \multicolumn{2}{c}{Atitlán} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+    Distancia a la orilla & Error total & Falsos $+$ & Error total & Falsos $+$ \\
+    \midrule
+    0 a 100 m      & 6.71\% & 5.01\% & 14.88\% & 13.29\% \\
+    100 a 250 m    & 3.76\% & 1.57\% & 2.07\%  & 1.01\%  \\
+    250 a 500 m    & 1.53\% & 0.48\% & 2.28\%  & 1.39\%  \\
+    500 a 1000 m   & 0.43\% & 0.17\% & 1.78\%  & 0.80\%  \\
+    Más de 1000 m  & ---    & ---    & 1.45\%  & 0.35\%  \\
+    \bottomrule
+  \end{tabular}
+  \caption{Tasa de error según la distancia a la ribera. En Amatitlán la última franja tiene apenas 68 píxeles y
+  se omite por no ser interpretable.}
+\end{table}
+
+En Atitlán los primeros cien metros desde la ribera concentran un 14.88\% de error, de los cuales 13.29 puntos son
+falsos positivos, mientras que más allá de un kilómetro el error baja a 1.45\%. En Amatitlán ocurre lo mismo en
+menor escala, 6.71\% contra 0.43\%. La causa es la mezcla dentro del píxel: un cuadro de 10 metros pegado a la
+ribera combina agua con vegetación, y esa mezcla se parece espectralmente a una floración. Es el mismo artefacto
+identificado en la Parte I, ahora cuantificado.
+
+Por zonas del lago el reparto también es desigual y resulta revelador. En Amatitlán la mitad sur, que es la cuenca
+más limpia, concentra los falsos positivos con 4.30\%, mientras que la mitad norte, la más cargada, concentra los
+falsos negativos con 2.37\%: el modelo suaviza el gradiente norte-sur, exagera en la mitad limpia y se queda corto
+en la más afectada. En Atitlán la mitad sur tiene 6.66\% de error frente a 2.07\% en la norte, porque es donde
+están las bahías y la costa más recortada, de modo que hay proporcionalmente más píxeles de borde.
+
+Para el uso práctico esto se traduce en una recomendación concreta: las alertas deberían ignorar la franja de los
+primeros cien metros de ribera, o al menos tratarla por separado, porque ahí se produce la mayoría de las falsas
+alarmas.
+
+\section{Análisis y conclusiones}
+
+\subsection{¿Sirve el modelo como herramienta de apoyo?}
+
+Sirve como apoyo dentro de un lago que ya se está monitoreando, no como sustituto del muestreo ni como detector que
+se pueda trasladar de un lago a otro. La evidencia sostiene las tres partes de esa afirmación.
+
+A favor: con partición aleatoria el Random Forest alcanza F2 de 0.793 y ROC-AUC de 0.982, y al pasar a validación
+espacial por bloques de un kilómetro solo baja a F2 de 0.744 con ROC-AUC de 0.973. Esa caída moderada indica que el
+modelo aprendió algo más que la vecindad inmediata de sus píxeles de entrenamiento. En el mapa de Amatitlán del 19
+de junio recupera el 98.4\% de la superficie afectada, que es justo lo que se le pediría a una herramienta de
+alerta temprana.
+
+En contra: la validación temporal, que es la que imita el uso real de predecir una fecha nueva, deja al Random
+Forest en F2 de 0.586, muy por debajo de lo que sugería la partición aleatoria. Y la generalización entre lagos
+fracasa por completo, con un F2 máximo de 0.090 al entrenar en Atitlán y evaluar en Amatitlán, y de 0.073 en la
+dirección contraria. En Atitlán, en una fecha tranquila, el modelo detecta apenas la mitad de los positivos y menos
+de la mitad de sus alarmas son correctas.
+
+La conclusión operativa es que el modelo sirve para priorizar dónde tomar muestras y para vigilar de forma continua
+un lago que ya tiene etiquetas propias, pero no para declarar limpio un cuerpo de agua ni para aplicarse tal cual en
+un lago donde no fue entrenado. Cada lago necesita su propia calibración.
+
+\subsection{Limitaciones encontradas}
+
+\begin{itemize}
+  \item \textbf{Las etiquetas no son mediciones de campo.} La variable respuesta se derivó del NDCI a través de la
+  clorofila-a estimada, así que el modelo aprende a reproducir un índice satelital y no una concentración medida en
+  laboratorio. Cualquier sesgo del índice se hereda.
+  \item \textbf{La resolución espacial limita la ribera.} B05 es nativamente de 20 metros y se remuestreó a 10, y
+  los píxeles de orilla mezclan agua con vegetación: ahí se concentra el error, hasta 14.88\% en los primeros cien
+  metros de Atitlán.
+  \item \textbf{Hay pocas fechas.} Son 11 por lago, 21 utilizables, y en Amatitlán solo una cae en época lluviosa.
+  La validación temporal descansa en una única fecha retenida por lago, por lo que su métrica es la menos estable.
+  \item \textbf{La nubosidad y la bruma cuestan datos.} El filtro sobre el infrarrojo cercano y la regla de
+  cobertura mínima dejaron fuera una escena completa, la de Atitlán del 18 de enero de 2025, y recortan porciones
+  de otras.
+  \item \textbf{Los dos lagos no son comparables.} La prevalencia es de 39.9\% en Amatitlán y 1.1\% en Atitlán, y
+  sus rangos de reflectancia tampoco coinciden, lo que explica que ningún modelo transfiera.
+  \item \textbf{La metodología de validación importa más de lo que parece.} La partición aleatoria infla los
+  resultados porque píxeles vecinos de la misma imagen son casi idénticos; los bloques de un kilómetro reducen ese
+  efecto pero no lo eliminan, ya que la dependencia espacial se extiende más allá del bloque.
+\end{itemize}
+
+\subsection{Qué datos mejorarían el modelo}
+
+\begin{itemize}
+  \item \textbf{Muestreos físicos de clorofila-a y de toxinas.} Son la pieza que falta: permitirían entrenar contra
+  concentraciones reales en lugar de contra un índice, y calibrar el umbral con mediciones locales en vez de tomarlo
+  de una guía general.
+  \item \textbf{Variables meteorológicas.} El viento explica hacia qué ribera se acumula la mancha, y la
+  temperatura del aire y la lluvia de los días previos condicionan el crecimiento. Ninguna está hoy en el modelo.
+  \item \textbf{Datos hidrológicos del río Villalobos}, en particular caudal y carga de nutrientes, que son el
+  origen del problema en Amatitlán y hoy solo entran de forma indirecta mediante la distancia a la orilla.
+  \item \textbf{Temperatura superficial del agua}, obtenible de la banda térmica de Landsat 8 y 9, que es uno de los
+  factores que más influye en la proliferación.
+  \item \textbf{Más fechas y más bandas.} Usar todas las pasadas disponibles de Sentinel-2 daría una serie temporal
+  real, y las bandas SWIR B11 y B12 permitirían enmascarar nubes y bruma mucho mejor que el filtro actual. Para
+  agua, el sensor OLCI de Sentinel-3 ofrece más bandas en el borde rojo, diseñadas para estimar clorofila.
+\end{itemize}
 
 \end{document}
