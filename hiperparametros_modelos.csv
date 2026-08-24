@@ -1,4 +1,4 @@
 modelo,hiperparametros,umbral
 Regresión Logística,"{'modelo__C': 10, 'modelo__class_weight': 'balanced'}",0.6
-Random Forest,"{'min_samples_leaf': 20, 'max_features': 0.7, 'max_depth': 24, 'class_weight': 'balanced_subsample'}",0.585
-Gradient Boosting,"{'min_samples_leaf': 20, 'max_leaf_nodes': 63, 'max_iter': 200, 'learning_rate': 0.03, 'l2_regularization': 0.0, 'class_weight': 'balanced'}",0.725
+Random Forest,"{'min_samples_leaf': 20, 'max_features': 0.7, 'max_depth': 24, 'class_weight': 'balanced_subsample'}",0.59
+Gradient Boosting,"{'min_samples_leaf': 20, 'max_leaf_nodes': 63, 'max_iter': 200, 'learning_rate': 0.03, 'l2_regularization': 0.0, 'class_weight': 'balanced'}",0.7449999999999999

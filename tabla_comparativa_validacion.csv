@@ -1,6 +1,6 @@
 ,Aleatoria,Aleatoria,Aleatoria,Aleatoria,Aleatoria,Aleatoria,Espacial (media 5 folds),Espacial (media 5 folds),Espacial (media 5 folds),Espacial (media 5 folds),Espacial (media 5 folds),Espacial (media 5 folds),Temporal,Temporal,Temporal,Temporal,Temporal,Temporal
 ,accuracy,precision,recall,f1,f2,roc_auc,accuracy,precision,recall,f1,f2,roc_auc,accuracy,precision,recall,f1,f2,roc_auc
 modelo,,,,,,,,,,,,,,,,,,
-Random Forest,0.9542,0.586,0.8704,0.7004,0.7934,0.9824,0.9493,0.5583,0.8123,0.6604,0.7434,0.9726,0.9199,0.691,0.5665,0.6226,0.5877,0.9485
+Random Forest,0.9542,0.5859,0.87,0.7003,0.7931,0.9825,0.9492,0.558,0.8126,0.6603,0.7435,0.9726,0.9196,0.6904,0.5641,0.6209,0.5855,0.9489
 Gradient Boosting,0.9522,0.5734,0.8719,0.6919,0.7897,0.9821,0.9489,0.5554,0.8283,0.6635,0.7529,0.9737,0.917,0.6703,0.5677,0.6147,0.5856,0.9574
 Regresión Logística,0.9115,0.3809,0.7005,0.4935,0.5999,0.9129,0.9107,0.3804,0.7004,0.491,0.5971,0.9093,0.9329,0.6433,0.9548,0.7687,0.8705,0.9797

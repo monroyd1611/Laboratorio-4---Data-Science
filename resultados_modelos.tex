@@ -1,0 +1,32 @@
+\subsection{Resultados de clasificación}
+Los tres modelos se evaluaron sobre el mismo 30\% de prueba. La configuración y el umbral se eligieron sin utilizar esas observaciones.
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+Modelo & Accuracy & Precision & Recall & F1 & F2 & ROC-AUC \\
+\midrule
+Random Forest & 0.954 & 0.586 & 0.870 & 0.700 & 0.793 & 0.982 \\
+Gradient Boosting & 0.952 & 0.573 & 0.872 & 0.692 & 0.790 & 0.982 \\
+Regresión Logística & 0.912 & 0.381 & 0.701 & 0.493 & 0.600 & 0.913 \\
+\bottomrule
+\end{tabular}
+\caption{Desempeño final sobre el conjunto de prueba común.}
+\end{table}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Modelo & Umbral & TN & FP & FN & TP \\
+\midrule
+Random Forest & 0.590 & 121723 & 5112 & 1081 & 7234 \\
+Gradient Boosting & 0.745 & 121442 & 5393 & 1065 & 7250 \\
+Regresión Logística & 0.600 & 117368 & 9467 & 2490 & 5825 \\
+\bottomrule
+\end{tabular}
+\caption{Matrices de confusión expresadas como conteos.}
+\end{table}
+Según F2, el mejor modelo es \textbf{Random Forest}, con F2=0.793, recall=0.870 y precision=0.586.
+Se priorizó reducir falsos negativos porque omitir una zona afectada retrasa la alerta y puede mantener la exposición. Los falsos positivos implican inspecciones y alertas innecesarias, pero su consecuencia suele ser reversible; F2 equilibra esta prioridad sin aceptar una precisión arbitrariamente baja.
